@@ -27,7 +27,6 @@ levels(papers$study_topic)
 
 islands = read_excel("data.xlsx", sheet = "islands")
 str(islands)
-islands$area_km2 = as.numeric(islands$area_km2)
 
 # Study topic -----------------------------------
 papers$study_topic <- dplyr::recode(
@@ -126,7 +125,7 @@ fig1 = ggplot(papers_year,
 
 fig1
 
-ggsave("Figure_1.jpg", fig1, width = 12, height = 9)
+ggsave("Figure_1.tiff", fig1, width = 12, height = 9, dpi = 300)
 
 
 # Environments  -------------------------------
@@ -238,7 +237,7 @@ fig2 = ggplot() +
 
 fig2
 
-ggsave("Figure_2.jpg", fig2)
+ggsave("Figure_2.tiff", fig2, dpi = 300)
 
 # Measuring mainland distance -------------------------------
 islands_sf <- islands %>%
@@ -311,7 +310,7 @@ hii = footprint(year=2009, path = "/Users/joaobiosmac/Desktop/R" )
 class(hii)
 
 coords <- islands %>%
-  select(lon, lat)
+ dplyr::select(lon, lat)
 
 hii_values <- terra::extract(
   hii,
@@ -378,7 +377,7 @@ mod_bayes <- brm(
   cores = 4,
   iter = 4000,
   
-  seed = 123
+  seed = 2026
 )
 
 summary(mod_bayes)
@@ -512,7 +511,7 @@ fig3 = ggplot() +
 
 fig3
 
-ggsave("Figure_3.jpg", fig3)
+ggsave("Figure_3.tiff", fig3, dpi = 300)
 
 # Bayesian model: number of studied species ---------------------
 mod_bayes_species <- brm(
@@ -531,7 +530,7 @@ mod_bayes_species <- brm(
   chains = 4,
   cores = 4,
   iter = 4000,
-  seed = 123
+  seed = 2026
 )
 
 summary(mod_bayes_species)
@@ -660,4 +659,4 @@ fig4 = ggplot() +
 
 fig4
 
-ggsave("Figure_4.jpg", fig4)
+ggsave("Figure_4.tiff", fig4, dpi = 300)
