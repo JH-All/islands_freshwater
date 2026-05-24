@@ -18,6 +18,7 @@ library(tidybayes)
 library(ggdist)
 library(tidyr)
 library(forcats)
+library(patchwork)
 
 # Preparing data -----------------------------
 papers = read_excel("data.xlsx", sheet = "papers")
@@ -453,7 +454,7 @@ relevant_effects_text <- relevant_effects %>%
 
 relevant_effects_text
 
-## Figure 3 --------------------------------
+## Figure 3A --------------------------------
 fig3 = ggplot() +
   geom_vline(
     xintercept = 0,
@@ -511,7 +512,7 @@ fig3 = ggplot() +
 
 fig3
 
-ggsave("Figure_3.tiff", fig3, dpi = 300)
+ggsave("Figure_3_A.tiff", fig3, dpi = 300)
 
 # Bayesian model: number of studied species ---------------------
 mod_bayes_species <- brm(
@@ -614,8 +615,8 @@ relevant_effects_text_sp <- posterior_species_summary %>%
 
 relevant_effects_text_sp
 
-## Figure 4 ----------------------------
-fig4 = ggplot() +
+## Figure 3B ----------------------------
+fig3_B = ggplot() +
   geom_vline(
     xintercept = 0,
     linetype = "dashed",
@@ -657,6 +658,11 @@ fig4 = ggplot() +
     axis.text.y = element_text(face = "bold")
   )
 
-fig4
+fig3_B
 
-ggsave("Figure_4.tiff", fig4, dpi = 300)
+ggsave("Figure_3_B.tiff", fig3_B, dpi = 300)
+
+# Figure 3 Complete --------------------------------
+fig3_complete = fig3 + fig3_B
+
+ggsave("Figure_3.tiff", fig3_complete, dpi = 300)
