@@ -19,6 +19,12 @@ library(ggdist)
 library(tidyr)
 library(forcats)
 library(patchwork)
+library(CoordinateCleaner)
+library(terra)
+library(geosphere)
+library(car)
+library(posterior)
+library(posterior)
 
 # Preparing data -----------------------------
 papers = read_excel("data.xlsx", sheet = "papers")
@@ -296,7 +302,7 @@ get_views <- function(island_name) {
     
   }, error = function(e) {
     
-    NA
+    NA_real_
     
   })
 }
@@ -306,8 +312,105 @@ islands$wiki_views <- map_dbl(
   get_views
 )
 
+islands_wiki_na <- islands %>%
+  filter(is.na(wiki_views)) %>%
+  mutate(
+    island_wiki_no_island = gsub(" ", "_", island)
+  )
+
+islands_wiki_na$wiki_views_no_island <- map_dbl(
+  islands_wiki_na$island_wiki_no_island,
+  get_views
+)
+
+
+islands_wiki_na %>%
+  summarise(
+    n_total_NA_original = n(),
+    n_found_without_Island = sum(!is.na(wiki_views_no_island)),
+    n_still_NA = sum(is.na(wiki_views_no_island))
+  )
+
+islands <- islands %>%
+  left_join(
+    islands_wiki_na %>%
+      dplyr::select(island, wiki_views_no_island),
+    by = "island"
+  ) %>%
+  dplyr::mutate(
+    wiki_views = ifelse(
+      is.na(wiki_views) & !is.na(wiki_views_no_island),
+      wiki_views_no_island,
+      wiki_views
+    )
+  ) %>%
+  dplyr::select(-wiki_views_no_island)
+
+wiki_manual <- tibble(
+  island = c(
+    "Beer (Bjørnøya)",
+    "Comores (Grande Comore)",
+    "Euboea/Evia",
+    "Marshall (Majuro)",
+    "Maurício (Mauritius)",
+    "Reunião",
+    "Saint-Pierre e Miquelon (Arquipélago)",
+    "Santo Antão",
+    "São Miguel (Azores)"
+  ),
+  island_wiki_manual = c(
+    "Beer_Island",
+    "Grande_Comore",
+    "Euboea",
+    "Marshall_Islands",
+    "Mauritius",
+    "Réunion",
+    "Saint_Pierre_and_Miquelon",
+    "Santo_Antão,_Cape_Verde",
+    "São_Miguel_Island"
+  )
+)
+
+wiki_manual$wiki_views_manual <- map_dbl(
+  wiki_manual$island_wiki_manual,
+  get_views
+)
+
+wiki_manual
+
+wiki_manual <- wiki_manual %>%
+  mutate(
+    island = ifelse(
+      island == "Santo Antão",
+      "Santa Antão",
+      island
+    )
+  )
+
+islands <- islands %>%
+  left_join(
+    wiki_manual %>%
+      dplyr::select(island, island_wiki_manual, wiki_views_manual),
+    by = "island"
+  ) %>%
+  mutate(
+    island_wiki = ifelse(
+      is.na(wiki_views) & !is.na(wiki_views_manual),
+      island_wiki_manual,
+      island_wiki
+    ),
+    wiki_views = ifelse(
+      is.na(wiki_views) & !is.na(wiki_views_manual),
+      wiki_views_manual,
+      wiki_views
+    )
+  ) %>%
+  dplyr::select(-island_wiki_manual, -wiki_views_manual)
+
+sum(is.na(islands$wiki_views))
+
 # Measuring Human footprint ---------------------------
-hii = footprint(year=2009, path = "/Users/joaobiosmac/Desktop/R" ) 
+hii = footprint(year=2009, path = "/Users/joaobiosmac/Desktop") 
 class(hii)
 
 coords <- islands %>%
@@ -321,6 +424,46 @@ hii_values <- terra::extract(
 islands$HII <- hii_values[,2]
 
 head(islands$HII)
+
+# Biodiversity institutons distance ---------------------------
+data("institutions")
+institutions
+institutions$type = as.factor(institutions$type)
+
+inst_sel <- institutions |>
+  as.data.frame() |>
+  filter(type %in% c("Research_centre", "University", "Museum")) |>
+  filter(
+    !is.na(decimalLongitude),
+    !is.na(decimalLatitude)
+  )
+
+islands_clean <- islands |>
+  filter(!is.na(lon), !is.na(lat))
+
+dist_mat <- geosphere::distm(
+  x = islands_clean[, c("lon", "lat")],
+  y = inst_sel[, c("decimalLongitude", "decimalLatitude")],
+  fun = geosphere::distHaversine
+)
+
+nearest_id <- max.col(-dist_mat)
+
+islands_clean$dist_nearest_inst_m  <- dist_mat[cbind(seq_len(nrow(dist_mat)), nearest_id)]
+islands_clean$dist_nearest_inst_km <- islands_clean$dist_nearest_inst_m / 1000
+islands_clean$nearest_inst_type    <- inst_sel$type[nearest_id]
+
+if ("name" %in% names(inst_sel)) {
+  islands_clean$nearest_inst_name <- inst_sel$name[nearest_id]
+}
+
+islands$dist_nearest_inst_km <- NA_real_
+islands$nearest_inst_type <- NA_character_
+
+idx <- which(!is.na(islands$lon) & !is.na(islands$lat))
+
+islands$dist_nearest_inst_km[idx] <- islands_clean$dist_nearest_inst_km
+islands$nearest_inst_type[idx] <- islands_clean$nearest_inst_type
 
 # Bayesian model: number of studies ---------------------
 na_count <- islands %>%
@@ -338,7 +481,7 @@ islands_model <- islands %>%
   mutate(
     population = log10(population + 1),
     area_km2 = log10(area_km2 + 1),
-    distance_to_university_km = log10(distance_to_university_km + 1),
+    dist_nearest_inst_km = log10(dist_nearest_inst_km + 1),
     wiki_views = log10(wiki_views + 1),
     distance_mainland_km = log10(distance_mainland_km + 1),
     HII = log10(HII + 1)
@@ -348,7 +491,7 @@ islands_model <- islands %>%
       c(
         population,
         area_km2,
-        distance_to_university_km,
+        dist_nearest_inst_km,
         wiki_views,
         distance_mainland_km,
         HII,
@@ -364,7 +507,7 @@ mod_bayes <- brm(
     population +
     area_km2 +
     island_type +
-    distance_to_university_km +
+    dist_nearest_inst_km +
     wiki_views +
     distance_mainland_km +
     HII +
@@ -387,7 +530,7 @@ posterior <- spread_draws(
   mod_bayes,
   b_population,
   b_area_km2,
-  b_distance_to_university_km,
+  b_dist_nearest_inst_km,
   b_wiki_views,
   b_distance_mainland_km,
   b_HII,
@@ -407,7 +550,7 @@ posterior_long <- posterior %>%
       "b_population" = "Population",
       "b_area_km2" = "Island area",
       "b_island_typeoceanic" = "Oceanic island",
-      "b_distance_to_university_km" = "Distance to university",
+      "b_dist_nearest_inst_km" = "Distance to biodiv. inst.",
       "b_wiki_views" = "Societal interest",
       "b_distance_mainland_km" = "Distance to mainland",
       "b_HII" = "Human footprint",
@@ -453,6 +596,53 @@ relevant_effects_text <- relevant_effects %>%
   )
 
 relevant_effects_text
+
+## VIF: Number of studies -----------------------------------
+mod_vif <- lm(
+  n_studies ~
+    population +
+    area_km2 +
+    island_type +
+    dist_nearest_inst_km +
+    wiki_views +
+    distance_mainland_km +
+    HII +
+    lat,
+  data = islands_model
+)
+
+vif(mod_vif)
+
+vif_df <- data.frame(
+  Variable = names(vif(mod_vif)),
+  VIF = as.numeric(vif(mod_vif))
+) %>%
+  mutate(
+    Variable = dplyr::recode(
+      Variable,
+      "population" = "Population",
+      "area_km2" = "Island area",
+      "island_type" = "Oceanic island",
+      "dist_nearest_inst_km" = "Distance to biodiv. inst.",
+      "wiki_views" = "Societal interest",
+      "distance_mainland_km" = "Distance to mainland",
+      "HII" = "Human footprint",
+      "lat" = "Latitude"
+    )
+  ) %>%
+  arrange(desc(VIF))
+
+
+vif_df$Variable <- factor(
+  vif_df$Variable,
+  levels = rev(vif_df$Variable)
+)
+
+## Model evaluation ------------------------------------
+rhat_vals <- rhat(mod_bayes)
+summary(rhat_vals)
+max(rhat_vals, na.rm = TRUE)
+bayes_R2(mod_bayes)
 
 ## Figure 3A --------------------------------
 fig3 = ggplot() +
@@ -520,7 +710,7 @@ mod_bayes_species <- brm(
     population +
     area_km2 +
     island_type +
-    distance_to_university_km +
+    dist_nearest_inst_km +
     wiki_views +
     distance_mainland_km +
     HII +
@@ -541,7 +731,7 @@ posterior_species <- spread_draws(
   mod_bayes_species,
   b_population,
   b_area_km2,
-  b_distance_to_university_km,
+  b_dist_nearest_inst_km,
   b_wiki_views,
   b_distance_mainland_km,
   b_HII,
@@ -561,7 +751,7 @@ posterior_species_long <- posterior_species %>%
       "b_population" = "Population",
       "b_area_km2" = "Island area",
       "b_island_typeoceanic" = "Oceanic island",
-      "b_distance_to_university_km" = "Distance to university",
+      "b_dist_nearest_inst_km" = "Distance to biodiv. inst.",
       "b_wiki_views" = "Societal interest",
       "b_distance_mainland_km" = "Distance to mainland",
       "b_HII" = "Human footprint",
@@ -573,11 +763,11 @@ term_order <- rev(c(
   "Island area",
   "Distance to mainland",
   "Societal interest",
-  "Population",
   "Latitude",
-  "Human footprint",
-  "Oceanic island",
-  "Distance to university"
+  "Population",
+  "Human footprint", 
+  "Distance to biodiv. inst.",
+  "Oceanic island"
 ))
 
 posterior_species_summary <- posterior_species_long %>%
@@ -614,6 +804,12 @@ relevant_effects_text_sp <- posterior_species_summary %>%
   )
 
 relevant_effects_text_sp
+
+### Model evaluation ------------------------------------
+rhat_vals_s <- rhat(mod_bayes_species)
+summary(rhat_vals_s)
+max(rhat_vals_s, na.rm = TRUE)
+bayes_R2(mod_bayes_species)
 
 ## Figure 3B ----------------------------
 fig3_B = ggplot() +
@@ -656,7 +852,8 @@ fig3_B = ggplot() +
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     axis.text.y = element_text(face = "bold")
-  )
+  )+
+  scale_x_continuous(limits = c(-1.2, 1.2))
 
 fig3_B
 
@@ -665,4 +862,66 @@ ggsave("Figure_3_B.tiff", fig3_B, dpi = 300)
 # Figure 3 Complete --------------------------------
 fig3_complete = fig3 + fig3_B
 
-ggsave("Figure_3.tiff", fig3_complete, dpi = 300)
+ggsave("Figure_3.tiff", fig3_complete, dpi = 300, width = 10, height = 5)
+
+# Supplementary ----------------------------------
+## Figure S1_A --------------------------------------------
+fig_S1_A <- pp_check(
+  mod_bayes,
+  type = "dens_overlay",
+  ndraws = 100
+) +
+  theme_classic(base_size = 15) +
+  labs(
+    x = "Number of studies",
+    y = "Density"
+  ) +
+  theme(
+    legend.position = c(0.88, 0.88),
+    legend.background = element_rect(
+      fill = alpha("white", 0.8),
+      colour = NA
+    ),
+    axis.text = element_text(color = "black")
+  )
+
+fig_S1_A
+
+## Figure S1_B --------------------------------------------
+fig_S1_B <- pp_check(
+  mod_bayes_species,
+  type = "dens_overlay",
+  ndraws = 100
+) +
+  theme_classic(base_size = 15) +
+  labs(
+    x = "Number of species studied",
+    y = "Density"
+  ) +
+  theme(
+    legend.position = c(0.88, 0.88),
+    legend.background = element_rect(
+      fill = alpha("white", 0.8),
+      colour = NA
+    ),
+    axis.text = element_text(color = "black")
+  )
+
+fig_S1_B
+
+## Figure S1 Complete ---------------------------------
+Figure_S1 <- fig_S1_A +
+  fig_S1_B +
+  plot_annotation(
+    tag_levels = "A"
+  )
+
+Figure_S1
+
+ggsave(
+  "Figure_S1.tiff",
+  Figure_S1,
+  width = 12,
+  height = 5,
+  dpi = 300
+)
