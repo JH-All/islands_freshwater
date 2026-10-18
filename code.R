@@ -24,7 +24,7 @@ library(terra)
 library(geosphere)
 library(car)
 library(posterior)
-library(posterior)
+library(WDI)
 
 # Preparing data -----------------------------
 papers = read_excel("data.xlsx", sheet = "papers")
@@ -191,7 +191,7 @@ islands <- islands %>%
 
 world <- map_data("world")
 
-fig2 = ggplot() +
+fig2 <- ggplot() +
   geom_polygon(
     data = world,
     aes(x = long, y = lat, group = group),
@@ -201,50 +201,63 @@ fig2 = ggplot() +
   ) +
   geom_point(
     data = islands,
-    aes(x = lon,
-        y = lat,
-        size = n_studies),
-    color = "cyan4",
-    alpha = 0.8
+    aes(
+      x = lon,
+      y = lat,
+      fill = n_studies
+    ),
+    shape = 21,
+    size = 3.5,
+    color = "gray20",
+    stroke = 0.3,
+    alpha = 0.9
   ) +
-  
-  scale_size_continuous(
+  scale_fill_gradient(
     name = "Number of studies",
-    range = c(1, 10),   
-    breaks = c(1, 5, 10, 20, 30)
-  )+
-  
+    low = "#B8E186",
+    high = "#762A83",
+    breaks = c(1, 5, 10, 20, 30, 37),
+    guide = guide_colorbar(
+      barwidth = grid::unit(0.4, "cm"),
+      barheight = grid::unit(5, "cm"),
+      title.position = "top"
+    )
+  ) +
   scale_x_continuous(
     breaks = seq(-100, 100, by = 100),
-    
     labels = function(x) {
-      paste0(abs(x), "°",
-             ifelse(x < 0, "W",
-                    ifelse(x > 0, "E", "")))
+      paste0(
+        abs(x), "°",
+        ifelse(x < 0, "W", ifelse(x > 0, "E", ""))
+      )
     }
-  )+
+  ) +
   scale_y_continuous(
     labels = function(y) {
-      paste0(abs(y), "°",
-             ifelse(y < 0, "S",
-                    ifelse(y > 0, "N", "")))
+      paste0(
+        abs(y), "°",
+        ifelse(y < 0, "S", ifelse(y > 0, "N", ""))
+      )
     }
   ) +
   coord_fixed(1.3) +
-  labs(
-    x = NULL,
-    y = NULL
-  ) +
-  theme_bw(base_size = 14) +
+  labs(x = NULL, y = NULL) +
+  theme_bw(base_size = 18) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
-    legend.position = "bottom"
+    legend.position = "right"
   )
 
 fig2
 
-ggsave("Figure_2.tiff", fig2, dpi = 300)
+ggsave(
+  "Figure_2.tiff",
+  fig2,
+  width = 14,
+  height = 8,
+  dpi = 300
+)
 
 # Measuring mainland distance -------------------------------
 islands_sf <- islands %>%
@@ -465,7 +478,168 @@ idx <- which(!is.na(islands$lon) & !is.na(islands$lat))
 islands$dist_nearest_inst_km[idx] <- islands_clean$dist_nearest_inst_km
 islands$nearest_inst_type[idx] <- islands_clean$nearest_inst_type
 
+# Country-level income ---------------------------------------
+islands <- islands %>%
+  dplyr::select(-any_of(c(
+    "country_sovereign", "iso2c", "income_iso2c",
+    "income_year", "income_per_capita", "income_status",
+    "income_assignment", "income_source", "income_indicator"
+  ))) %>%
+  mutate(
+    country_sovereign = dplyr::recode(
+      str_squish(as.character(country)),
+      "Autrália" = "Austrália",
+      "New Zeland" = "Nova Zelândia",
+      "Trinindad e Tabogo" = "Trinidad e Tobago",
+      "Escócia" = "Reino Unido",
+      "Polinésia Francesa" = "França",
+      "Wallis e Futuna" = "França"
+    )
+  )
+
+
+country_codes <- tibble::tribble(
+  ~country_sovereign,   ~iso2c,
+  "Austrália",          "AU",
+  "Bahamas",            "BS",
+  "Brasil",             "BR",
+  "Cabo Verde",         "CV",
+  "Canadá",             "CA",
+  "Chile",              "CL",
+  "China",              "CN",
+  "Chipre",             "CY",
+  "Colômbia",           "CO",
+  "Comores",            "KM",
+  "Coreia do Sul",      "KR",
+  "Costa Rica",         "CR",
+  "Croácia",            "HR",
+  "Cuba",               "CU",
+  "Dinamarca",          "DK",
+  "Dominica",           "DM",
+  "Equador",            "EC",
+  "Estônia",            "EE",
+  "EUA",                "US",
+  "Fiji",               "FJ",
+  "Filipinas",          "PH",
+  "França",             "FR",
+  "Grécia",             "GR",
+  "Guiné Equatorial",   "GQ",
+  "Honduras",           "HN",
+  "Ilhas Cook",         "CK",
+  "Ilhas Marshall",     "MH",
+  "Ilhas Maurício",     "MU",
+  "Ilhas Salomão",      "SB",
+  "Índia",              "IN",
+  "Indonésia",          "ID",
+  "Jamaica",            "JM",
+  "Japão",              "JP",
+  "Madagascar",         "MG",
+  "Malásia",            "MY",
+  "México",             "MX",
+  "Micronésia",         "FM",
+  "Noruega",            "NO",
+  "Nova Zelândia",      "NZ",
+  "Países Baixos",      "NL",
+  "Panamá",             "PA",
+  "Papua-Nova Guiné",   "PG",
+  "Península Antártica", NA_character_,
+  "Portugal",           "PT",
+  "Reino Unido",        "GB",
+  "Rússia",             "RU",
+  "Samoa",              "WS",
+  "Seychelles",         "SC",
+  "Tanzânia",           "TZ",
+  "Tonga",              "TO",
+  "Trinidad e Tobago",  "TT",
+  "Turquia",            "TR",
+  "Vanuatu",            "VU",
+  "Vietnã",             "VN"
+)
+
+unmapped <- islands %>%
+  distinct(country_sovereign) %>%
+  anti_join(country_codes, by = "country_sovereign")
+
+if (nrow(unmapped) > 0L) {
+  print(unmapped)
+  stop("Corrigir países sem correspondência antes de continuar.")
+}
+
+islands <- islands %>%
+  left_join(country_codes, by = "country_sovereign") %>%
+  mutate(
+    income_iso2c = if_else(iso2c == "CK", "NZ", iso2c)
+  )
+
+income_indicator <- "NY.GNP.PCAP.PP.KD"
+
+income_history <- WDI::WDI(
+  country = unique(na.omit(islands$income_iso2c)),
+  indicator = c(income_per_capita = income_indicator),
+  start = 2020,
+  end = 2024,
+  extra = FALSE
+)
+
+
+income_recent <- income_history %>%
+  filter(
+    is.finite(income_per_capita),
+    income_per_capita > 0
+  ) %>%
+  group_by(iso2c) %>%
+  slice_max(year, n = 1, with_ties = FALSE) %>%
+  ungroup() %>%
+  transmute(
+    income_iso2c = iso2c,
+    income_year = year,
+    income_per_capita
+  )
+
+islands <- islands %>%
+  left_join(income_recent, by = "income_iso2c") %>%
+  mutate(
+    income_per_capita = if_else(
+      country_sovereign == "Península Antártica",
+      0,
+      income_per_capita
+    ),
+    income_assignment = case_when(
+      country_sovereign == "Península Antártica" ~
+        "Zero atribuído: renda nacional não aplicável",
+      is.na(income_per_capita) ~
+        "Ausente: requer fonte compatível",
+      country_sovereign == "Ilhas Cook" ~
+        "Proxy: Nova Zelândia",
+      TRUE ~ "Dado do próprio país"
+    ),
+    income_source = if_else(
+      country_sovereign == "Península Antártica",
+      "Decisão dos autores",
+      "World Bank WDI"
+    ),
+    income_indicator = if_else(
+      country_sovereign == "Península Antártica",
+      NA_character_,
+      .env$income_indicator
+    )
+  )
+
+
+income_check <- islands %>%
+  count(
+    country_sovereign, iso2c, income_iso2c,
+    income_year, income_per_capita,
+    income_assignment, income_source, income_indicator,
+    name = "n_islands"
+  ) %>%
+  arrange(country_sovereign)
+
+print(income_check)
+print(filter(income_check, is.na(income_per_capita)))
+
 # Bayesian model: number of studies ---------------------
+
 na_count <- islands %>%
   summarise(across(everything(), ~ sum(is.na(.)))) %>%
   tidyr::pivot_longer(
@@ -479,32 +653,121 @@ na_count
 
 islands_model <- islands %>%
   mutate(
-    population = log10(population + 1),
+    population_density = if_else(
+      !is.na(area_km2) & area_km2 > 0,
+      population / area_km2,
+      NA_real_
+    ),
+    population_density = log10(population_density + 1),
+    income_per_capita = log10(income_per_capita + 1),
     area_km2 = log10(area_km2 + 1),
     dist_nearest_inst_km = log10(dist_nearest_inst_km + 1),
     wiki_views = log10(wiki_views + 1),
     distance_mainland_km = log10(distance_mainland_km + 1),
     HII = log10(HII + 1)
-  ) %>%
+  )
+
+
+continuous_predictors <- c(
+  "population_density",
+  "income_per_capita",
+  "area_km2",
+  "dist_nearest_inst_km",
+  "wiki_views",
+  "distance_mainland_km",
+  "HII",
+  "lat"
+)
+
+islands_model <- islands_model %>%
+  mutate(
+    valid_predictors =
+      if_all(all_of(continuous_predictors), ~ is.finite(.)) &
+      !is.na(island_type),
+    included_studies =
+      valid_predictors & is.finite(n_studies),
+    included_species =
+      valid_predictors & is.finite(number_of_studies_species)
+  )
+
+
+excluded_islands <- islands_model %>%
+  filter(!included_studies | !included_species) %>%
+  dplyr::select(
+    any_of(c("island", "country", "country_sovereign")),
+    included_studies,
+    included_species,
+    all_of(continuous_predictors),
+    island_type,
+    n_studies,
+    number_of_studies_species
+  )
+
+excluded_islands
+
+scaling_reference <- islands_model %>%
+  filter(included_studies | included_species)
+
+if (nrow(scaling_reference) < 2L) {
+  stop("Número insuficiente de ilhas utilizáveis.")
+}
+
+scaling_parameters <- tibble::tibble(
+  variable = continuous_predictors,
+  center = vapply(
+    scaling_reference[continuous_predictors],
+    mean,
+    numeric(1)
+  ),
+  scale = vapply(
+    scaling_reference[continuous_predictors],
+    sd,
+    numeric(1)
+  )
+)
+
+if (any(
+  !is.finite(scaling_parameters$scale) |
+  scaling_parameters$scale <= 0
+)) {
+  stop("Há preditor sem variação ou com escala inválida.")
+}
+
+islands_model <- islands_model %>%
   mutate(
     across(
-      c(
-        population,
-        area_km2,
-        dist_nearest_inst_km,
-        wiki_views,
-        distance_mainland_km,
-        HII,
-        lat
-      ),
-      ~ as.numeric(scale(.))
+      all_of(continuous_predictors),
+      ~ {
+        j <- match(cur_column(), scaling_parameters$variable)
+        (. - scaling_parameters$center[j]) /
+          scaling_parameters$scale[j]
+      }
     )
   )
 
 
-mod_bayes <- brm(
+islands_model_studies <- islands_model %>%
+  filter(included_studies)
+
+islands_model_species <- islands_model %>%
+  filter(included_species)
+
+model_sample_sizes <- tibble::tibble(
+  model = c("Number of studies", "Number of studied species"),
+  n_total = nrow(islands),
+  n_modelled = c(
+    nrow(islands_model_studies),
+    nrow(islands_model_species)
+  )
+) %>%
+  mutate(n_excluded = n_total - n_modelled)
+
+model_sample_sizes
+
+mod_bayes <- brms::brm(
   n_studies ~
-    population +
+    population_density +
+    income_per_capita +
     area_km2 +
     island_type +
     dist_nearest_inst_km +
@@ -513,22 +776,22 @@ mod_bayes <- brm(
     HII +
     lat,
   
-  data = islands_model,
-  
-  family = negbinomial(),
-  
+  data = islands_model_studies,
+  family = brms::negbinomial(link = "log"),
   chains = 4,
   cores = 4,
   iter = 4000,
-  
   seed = 2026
 )
 
 summary(mod_bayes)
 
-posterior <- spread_draws(
+nobs(mod_bayes)
+
+posterior <- tidybayes::spread_draws(
   mod_bayes,
-  b_population,
+  b_population_density,
+  b_income_per_capita,
   b_area_km2,
   b_dist_nearest_inst_km,
   b_wiki_views,
@@ -547,7 +810,8 @@ posterior_long <- posterior %>%
   mutate(
     term = dplyr::recode(
       term,
-      "b_population" = "Population",
+      "b_population_density" = "Population density",
+      "b_income_per_capita" = "Country income per capita",
       "b_area_km2" = "Island area",
       "b_island_typeoceanic" = "Oceanic island",
       "b_dist_nearest_inst_km" = "Distance to biodiv. inst.",
@@ -565,42 +829,34 @@ posterior_summary <- posterior_long %>%
     lower = quantile(estimate, 0.025),
     upper = quantile(estimate, 0.975),
     .groups = "drop"
-  )
-
-posterior_summary <- posterior_summary %>%
-  mutate(
-    term = forcats::fct_reorder(term, mean)
-  )
+  ) %>%
+  mutate(term = forcats::fct_reorder(term, mean))
 
 posterior_long <- posterior_long %>%
   mutate(
-    term = factor(term,
-                  levels = levels(posterior_summary$term))
+    term = factor(
+      term,
+      levels = levels(posterior_summary$term)
+    )
   )
 
-
 relevant_effects <- posterior_summary %>%
-  mutate(
-    supported_effect = lower > 0 | upper < 0
-  ) %>%
-  filter(supported_effect) %>%
+  filter(lower > 0 | upper < 0) %>%
   arrange(desc(abs(mean)))
 
 relevant_effects
 
 relevant_effects_text <- relevant_effects %>%
-  mutate(
-    mean = round(mean, 2),
-    lower = round(lower, 2),
-    upper = round(upper, 2)
-  )
+  mutate(across(c(mean, lower, upper), ~ round(.x, 2)))
 
 relevant_effects_text
 
 ## VIF: Number of studies -----------------------------------
+
 mod_vif <- lm(
   n_studies ~
-    population +
+    population_density +
+    income_per_capita +
     area_km2 +
     island_type +
     dist_nearest_inst_km +
@@ -608,19 +864,21 @@ mod_vif <- lm(
     distance_mainland_km +
     HII +
     lat,
-  data = islands_model
+  data = islands_model_studies
 )
 
-vif(mod_vif)
+vif_values <- car::vif(mod_vif)
+vif_values
 
 vif_df <- data.frame(
-  Variable = names(vif(mod_vif)),
-  VIF = as.numeric(vif(mod_vif))
+  Variable = names(vif_values),
+  VIF = as.numeric(vif_values)
 ) %>%
   mutate(
     Variable = dplyr::recode(
       Variable,
-      "population" = "Population",
+      "population_density" = "Population density",
+      "income_per_capita" = "Country income per capita",
       "area_km2" = "Island area",
       "island_type" = "Oceanic island",
       "dist_nearest_inst_km" = "Distance to biodiv. inst.",
@@ -632,20 +890,23 @@ vif_df <- data.frame(
   ) %>%
   arrange(desc(VIF))
 
-
 vif_df$Variable <- factor(
   vif_df$Variable,
   levels = rev(vif_df$Variable)
 )
 
+vif_df
+
 ## Model evaluation ------------------------------------
-rhat_vals <- rhat(mod_bayes)
+
+rhat_vals <- brms::rhat(mod_bayes)
 summary(rhat_vals)
 max(rhat_vals, na.rm = TRUE)
-bayes_R2(mod_bayes)
+brms::bayes_R2(mod_bayes)
 
 ## Figure 3A --------------------------------
-fig3 = ggplot() +
+
+fig3 <- ggplot() +
   geom_vline(
     xintercept = 0,
     linetype = "dashed",
@@ -654,10 +915,7 @@ fig3 = ggplot() +
   ) +
   stat_halfeye(
     data = posterior_long,
-    aes(
-      x = estimate,
-      y = term
-    ),
+    aes(x = estimate, y = term),
     fill = "cyan4",
     alpha = 0.2,
     color = "cyan4",
@@ -667,47 +925,48 @@ fig3 = ggplot() +
   ) +
   geom_segment(
     data = posterior_summary,
-    aes(
-      x = lower,
-      xend = upper,
-      y = term,
-      yend = term
-    ),
+    aes(x = lower, xend = upper, y = term, yend = term),
     linewidth = 1.2,
     color = "black"
   ) +
   geom_point(
     data = posterior_summary,
-    aes(
-      x = mean,
-      y = term
-    ),
+    aes(x = mean, y = term),
     shape = 21,
     size = 4,
     fill = "cyan4",
     color = "black"
   ) +
-  
   labs(
+    title = "Number of studies",
     x = "Posterior estimate",
     y = NULL
-  ) +
-  
+  )+
   theme_bw(base_size = 15) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
-    axis.text.y = element_text(face = "bold")
+    axis.text.y = element_text(face = "bold"),
+    axis.title.x = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
   )
 
 fig3
 
-ggsave("Figure_3_A.tiff", fig3, dpi = 300)
+ggsave(
+  "Figure_3_A.tiff",
+  fig3,
+  width = 7,
+  height = 6,
+  dpi = 300
+)
 
 # Bayesian model: number of studied species ---------------------
-mod_bayes_species <- brm(
+
+mod_bayes_species <- brms::brm(
   number_of_studies_species ~
-    population +
+    population_density +
+    income_per_capita +
     area_km2 +
     island_type +
     dist_nearest_inst_km +
@@ -716,8 +975,8 @@ mod_bayes_species <- brm(
     HII +
     lat,
   
-  data = islands_model,
-  family = negbinomial(),
+  data = islands_model_species,
+  family = brms::negbinomial(link = "log"),
   chains = 4,
   cores = 4,
   iter = 4000,
@@ -725,11 +984,22 @@ mod_bayes_species <- brm(
 )
 
 summary(mod_bayes_species)
+nobs(mod_bayes_species)
 
+model_sample_sizes$n_modelled <- c(
+  nobs(mod_bayes),
+  nobs(mod_bayes_species)
+)
 
-posterior_species <- spread_draws(
+model_sample_sizes <- model_sample_sizes %>%
+  mutate(n_excluded = n_total - n_modelled)
+
+model_sample_sizes
+
+posterior_species <- tidybayes::spread_draws(
   mod_bayes_species,
-  b_population,
+  b_population_density,
+  b_income_per_capita,
   b_area_km2,
   b_dist_nearest_inst_km,
   b_wiki_views,
@@ -748,7 +1018,8 @@ posterior_species_long <- posterior_species %>%
   mutate(
     term = dplyr::recode(
       term,
-      "b_population" = "Population",
+      "b_population_density" = "Population density",
+      "b_income_per_capita" = "Country income per capita",
       "b_area_km2" = "Island area",
       "b_island_typeoceanic" = "Oceanic island",
       "b_dist_nearest_inst_km" = "Distance to biodiv. inst.",
@@ -764,8 +1035,9 @@ term_order <- rev(c(
   "Distance to mainland",
   "Societal interest",
   "Latitude",
-  "Population",
-  "Human footprint", 
+  "Population density",
+  "Country income per capita",
+  "Human footprint",
   "Distance to biodiv. inst.",
   "Oceanic island"
 ))
@@ -778,41 +1050,59 @@ posterior_species_summary <- posterior_species_long %>%
     upper = quantile(estimate, 0.975),
     .groups = "drop"
   ) %>%
-  mutate(
-    term = factor(term, levels = term_order)
-  )
+  mutate(term = factor(term, levels = term_order))
 
 posterior_species_long <- posterior_species_long %>%
-  mutate(
-    term = factor(term, levels = term_order)
-  )
+  mutate(term = factor(term, levels = term_order))
 
 relevant_effects_species <- posterior_species_summary %>%
-  mutate(
-    supported_effect = lower > 0 | upper < 0
-  ) %>%
-  filter(supported_effect) %>%
+  filter(lower > 0 | upper < 0) %>%
   arrange(desc(abs(mean)))
 
 posterior_species_summary
+relevant_effects_species
 
 relevant_effects_text_sp <- posterior_species_summary %>%
-  mutate(
-    mean = round(mean, 2),
-    lower = round(lower, 2),
-    upper = round(upper, 2)
-  )
+  mutate(across(c(mean, lower, upper), ~ round(.x, 2)))
 
 relevant_effects_text_sp
 
+## VIF: Number of studied species ---------------------------
+
+mod_vif_species <- lm(
+  number_of_studies_species ~
+    population_density +
+    income_per_capita +
+    area_km2 +
+    island_type +
+    dist_nearest_inst_km +
+    wiki_views +
+    distance_mainland_km +
+    HII +
+    lat,
+  data = islands_model_species
+)
+
+car::vif(mod_vif_species)
+
 ### Model evaluation ------------------------------------
-rhat_vals_s <- rhat(mod_bayes_species)
+
+rhat_vals_s <- brms::rhat(mod_bayes_species)
 summary(rhat_vals_s)
 max(rhat_vals_s, na.rm = TRUE)
-bayes_R2(mod_bayes_species)
+brms::bayes_R2(mod_bayes_species)
 
-## Figure 3B ----------------------------
-fig3_B = ggplot() +
+## Figure 3B --------------------------------------------
+
+term_order <- levels(posterior_summary$term)
+
+posterior_species_summary <- posterior_species_summary %>%
+  mutate(term = factor(term, levels = term_order))
+
+posterior_species_long <- posterior_species_long %>%
+  mutate(term = factor(term, levels = term_order))
+
+fig3_B <- ggplot() +
   geom_vline(
     xintercept = 0,
     linetype = "dashed",
@@ -844,42 +1134,55 @@ fig3_B = ggplot() +
     color = "black"
   ) +
   labs(
+    title = "Number of species studied",
     x = "Posterior estimate",
     y = NULL
-  ) +
+  )+
   theme_bw(base_size = 15) +
   theme(
     panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
-    axis.text.y = element_text(face = "bold")
-  )+
-  scale_x_continuous(limits = c(-1.2, 1.2))
+    axis.text.y = element_text(face = "bold"),
+    axis.title.x = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
 
 fig3_B
 
-ggsave("Figure_3_B.tiff", fig3_B, dpi = 300)
+ggsave(
+  "Figure_3_B.tiff",
+  fig3_B,
+  width = 7,
+  height = 6,
+  dpi = 300
+)
 
-# Figure 3 Complete --------------------------------
-fig3_complete = fig3 + fig3_B
+# Figure 3 Complete -------------------------------------
 
-ggsave("Figure_3.tiff", fig3_complete, dpi = 300, width = 10, height = 5)
+fig3_complete <- fig3 + fig3_B
 
-# Supplementary ----------------------------------
-## Figure S1_A --------------------------------------------
-fig_S1_A <- pp_check(
+ggsave(
+  "Figure_3.tiff",
+  fig3_complete,
+  dpi = 300,
+  width = 12,
+  height = 6
+)
+
+# Supplementary -----------------------------------------
+## Figure S1_A ------------------------------------------
+
+fig_S1_A <- brms::pp_check(
   mod_bayes,
   type = "dens_overlay",
   ndraws = 100
 ) +
   theme_classic(base_size = 15) +
-  labs(
-    x = "Number of studies",
-    y = "Density"
-  ) +
+  labs(x = "Number of studies", y = "Density") +
   theme(
     legend.position = c(0.88, 0.88),
     legend.background = element_rect(
-      fill = alpha("white", 0.8),
+      fill = scales::alpha("white", 0.8),
       colour = NA
     ),
     axis.text = element_text(color = "black")
@@ -887,21 +1190,19 @@ fig_S1_A <- pp_check(
 
 fig_S1_A
 
-## Figure S1_B --------------------------------------------
-fig_S1_B <- pp_check(
+## Figure S1_B ------------------------------------------
+
+fig_S1_B <- brms::pp_check(
   mod_bayes_species,
   type = "dens_overlay",
   ndraws = 100
 ) +
   theme_classic(base_size = 15) +
-  labs(
-    x = "Number of species studied",
-    y = "Density"
-  ) +
+  labs(x = "Number of species studied", y = "Density") +
   theme(
     legend.position = c(0.88, 0.88),
     legend.background = element_rect(
-      fill = alpha("white", 0.8),
+      fill = scales::alpha("white", 0.8),
       colour = NA
     ),
     axis.text = element_text(color = "black")
@@ -909,12 +1210,11 @@ fig_S1_B <- pp_check(
 
 fig_S1_B
 
-## Figure S1 Complete ---------------------------------
+## Figure S1 Complete -----------------------------------
+
 Figure_S1 <- fig_S1_A +
   fig_S1_B +
-  plot_annotation(
-    tag_levels = "A"
-  )
+  patchwork::plot_annotation(tag_levels = "A")
 
 Figure_S1
 
